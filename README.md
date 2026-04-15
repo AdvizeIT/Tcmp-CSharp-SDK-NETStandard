@@ -1,5 +1,5 @@
 # Tcmp-CSharp-SDK
-A C# SDK to communicate with a TappyUSB using the TCMP protocol.
+A C# SDK to communicate with a TappyUSB using the TCMP protocol. Updated to use .NET Standard 2.0
 
 ## Install SDK into Visual Studio Project using Nuget
 
