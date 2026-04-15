@@ -61,7 +61,7 @@ namespace TapTrack.Demo
 
         private void MainWindow_Closed(object sender, EventArgs e)
         {
-            tappy.Disconnect();
+            tappy.Dispose();
         }
 
         //

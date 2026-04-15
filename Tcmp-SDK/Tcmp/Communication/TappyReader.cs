@@ -389,13 +389,16 @@ namespace TapTrack.Tcmp.Communication
 			Command cmd = new Ping();
 			AutoResetEvent receivedResp = new AutoResetEvent(false);
 			bool success = false;
+			bool exceptionOccurred = false;
 
 			if (!conn.Connect(deviceName))
 				return false;
 
 			Callback resp = (ResponseFrame frame, Exception e) =>
 			{
-				if (TcmpFrame.IsValidFrame(frame))
+				if (e != null)
+					exceptionOccurred = true;
+				else if (TcmpFrame.IsValidFrame(frame))
 					success = true;
 				receivedResp.Set();
 			};
@@ -403,8 +406,22 @@ namespace TapTrack.Tcmp.Communication
 			SendCommand(cmd, resp);
 			receivedResp.WaitOne(timeout);
 
+			// Only retry on a genuine timeout (no exception, no response).
+			// On first TrueUSB use the WinUSB driver initialises slowly and the
+			// device may discard its Ping response before the read thread is ready;
+			// retrying while the connection is already warm succeeds.
+			// Do NOT retry if Send itself threw – the port is not a Tappy.
+			if (!success && !exceptionOccurred)
+			{
+				receivedResp.Reset();
+				SendCommand(cmd, resp);
+				receivedResp.WaitOne(timeout);
+			}
+
 			if (success)
 				DeviceName = deviceName;
+			else
+				conn.Disconnect();
 
 			return success;
 		}

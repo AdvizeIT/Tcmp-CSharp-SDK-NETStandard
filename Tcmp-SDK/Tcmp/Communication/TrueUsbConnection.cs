@@ -21,6 +21,21 @@ namespace TapTrack.Tcmp.Communication
 
         public override bool Connect(string deviceName)
         {
+            // Tear down any previous (possibly leaked) connection before opening a new one
+            if (!(deviceReader is null))
+            {
+                deviceReader.DataReceived -= DeviceReader_DataReceived;
+                deviceReader.DataReceivedEnabled = false;
+                deviceReader.Dispose();
+                deviceReader = null;
+            }
+
+            deviceWriter?.Dispose();
+            deviceWriter = null;
+
+            device?.Close();
+            device = null;
+
             // Search for a registry with this deviceName
             UsbRegDeviceList devices = UsbDevice.AllWinUsbDevices;
             UsbRegistry registry = devices.Find(reg => reg.FullName == deviceName);
@@ -58,7 +73,19 @@ namespace TapTrack.Tcmp.Communication
 
         public override void Disconnect()
         {
+            if (!(deviceReader is null))
+            {
+                deviceReader.DataReceived -= DeviceReader_DataReceived;
+                deviceReader.DataReceivedEnabled = false;
+                deviceReader.Dispose();
+                deviceReader = null;
+            }
+
+            deviceWriter?.Dispose();
+            deviceWriter = null;
+
             device?.Close();
+            device = null;
         }
 
         public override void DisconnectBlueGiga()
@@ -68,16 +95,7 @@ namespace TapTrack.Tcmp.Communication
 
         public override void Dispose()
         {
-            // TODO: Do we need to call any other methods here?
-            if (!(deviceReader is null))
-            {
-                // Remove event handler
-                deviceReader.DataReceived -= DeviceReader_DataReceived;
-                deviceReader.DataReceivedEnabled = false;
-                deviceReader.Dispose();
-            }
-            deviceWriter?.Dispose();
-            device?.Close();
+            Disconnect();
         }
 
         public override void Flush()

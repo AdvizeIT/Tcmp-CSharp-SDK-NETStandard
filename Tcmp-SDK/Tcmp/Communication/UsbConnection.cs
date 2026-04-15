@@ -17,6 +17,7 @@ namespace TapTrack.Tcmp.Communication
             port.DataReceived += new SerialDataReceivedEventHandler(DataReceivedHandler);
             port.BaudRate = 115200;
             port.RtsEnable = false;
+            port.WriteTimeout = 2000; // prevent port.Write blocking forever on non-Tappy ports
         }
 
         private void DataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
@@ -76,7 +77,7 @@ namespace TapTrack.Tcmp.Communication
             {
                 port.Write(data, 0, data.Length);
             }
-            catch (InvalidOperationException e)
+            catch (Exception e)
             {
                 throw new HardwareException("There is no TappyUSB connected");
             }
