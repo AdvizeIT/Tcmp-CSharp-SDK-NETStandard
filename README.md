@@ -3,9 +3,9 @@ A C# SDK to communicate with a TappyUSB using the TCMP protocol. Updated to use 
 
 ## Install SDK into Visual Studio Project using Nuget
 
-Nuget page: https://www.nuget.org/packages/TapTrack.Tcmp/
+Nuget page: [https://www.nuget.org/packages/TapTrack.Tcmp/](https://www.nuget.org/packages/TapTrack.Tcmp.NETStandard)
 
-`PM> Install-Package TapTrack.Tcmp`
+`PM> Install-Package TapTrack.Tcmp.NETStandard`
 
 ### Required local database utility to use the batch NFC tag encoder in the example/demo app
 To use the batch tag encoder feature of the example/demo utility (v3.0+), you may also need to install SQL local database 2016 for Windows.  The install package can be dowloaded [here](https://github.com/TapTrack/Tcmp-CSharp-SDK/releases/download/0.7.0/SqlLocalDB.msi)
