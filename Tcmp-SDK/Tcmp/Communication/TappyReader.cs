@@ -195,13 +195,24 @@ namespace TapTrack.Tcmp.Communication
                 return;
 
             Debug.WriteLine("Data is being recieve");
-			if (!conn.IsOpen() && responseCallback != null)
-				responseCallback(null, new HardwareException("Connection to device is not open"));
+            if (!activeConnection.IsOpen())
+            {
+                responseCallback?.Invoke(null, new HardwareException("Connection to device is not open"));
+                return;
+            }
 
             Debug.WriteLine($"     Before: {BitConverter.ToString(buffer.ToArray())}");
 
-            if (activeConnection.Read(this.buffer) == 0)
+            try
+            {
+                if (activeConnection.Read(this.buffer) == 0)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                responseCallback?.Invoke(null, ex);
                 return;
+            }
 
             Debug.WriteLine($"      After: {BitConverter.ToString(buffer.ToArray())}");
 
@@ -243,6 +254,10 @@ namespace TapTrack.Tcmp.Communication
                 catch (HardwareException exc)
                 {
                     responseCallback?.Invoke(null, new HardwareException("Connection to device is not open"));
+                }
+                catch (Exception exc)
+                {
+                    responseCallback?.Invoke(null, exc);
                 }
             }
         }
