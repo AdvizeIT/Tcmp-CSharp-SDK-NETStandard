@@ -43,13 +43,13 @@ namespace TapTrack.Tcmp.Communication
 
         public override void Disconnect()
         {
-            if (port.IsOpen)
+            if (port?.IsOpen == true)
                 port.Close();
         }
 
         public override bool IsOpen()
         {
-            return port.IsOpen;
+            return port?.IsOpen == true;
         }
 
         public override string[] GetAvailableDevices()
@@ -79,7 +79,7 @@ namespace TapTrack.Tcmp.Communication
             }
             catch (Exception e)
             {
-                throw new HardwareException("There is no TappyUSB connected");
+                throw new HardwareException("Error writing to serial port for TappyUSB", e);
             }
         }
 
@@ -89,13 +89,19 @@ namespace TapTrack.Tcmp.Communication
             int count = 0;
 
             Debug.Write("   received: ");
-
-            while (port.BytesToRead > 0)
+            try
             {
-                temp = (byte)port.ReadByte();
-                buffer.Add(temp);
-                count++;
-                Debug.Write(string.Format("{0:X}", temp).PadLeft(2, '0') + " ");
+                while (port.BytesToRead > 0)
+                {
+                    temp = (byte)port.ReadByte();
+                    buffer.Add(temp);
+                    count++;
+                    Debug.Write(string.Format("{0:X}", temp).PadLeft(2, '0') + " ");
+                }
+            }
+            catch (Exception e)
+            {
+                throw new HardwareException("Error reading serial port for TappyUSB", e);
             }
 
             Debug.WriteLine("");
@@ -110,14 +116,13 @@ namespace TapTrack.Tcmp.Communication
 
 		public override bool getBlueGigaStatus()
 		{
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 
 		}
 
-
 		public override void setDisconnectCallback(Bluegiga.BLE.Events.Connection.DisconnectedEventHandler disconnectCallback)
 		{
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 		}
 
 		public override void DisconnectBlueGiga()
@@ -127,16 +132,21 @@ namespace TapTrack.Tcmp.Communication
 
 		public override void Flush()
         {
-            if (port.IsOpen)
+            if (port?.IsOpen != true) return;
+            try
             {
                 port.DiscardInBuffer();
                 port.DiscardOutBuffer();
+            }
+            catch
+            {
+                // Ignored.
             }
         }
 
         public override void Dispose()
         {
-            port.Dispose();
+            port?.Dispose();
         }
     }
 }

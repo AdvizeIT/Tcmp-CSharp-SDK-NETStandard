@@ -15,5 +15,10 @@ namespace TapTrack.Tcmp.Communication.Exceptions
         {
 
         }
+
+        public HardwareException(string message, Exception innerException) : base(message, innerException)
+        {
+
+        }
     }
 }
