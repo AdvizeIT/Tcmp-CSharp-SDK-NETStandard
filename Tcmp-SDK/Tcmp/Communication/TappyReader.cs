@@ -119,9 +119,16 @@ namespace TapTrack.Tcmp.Communication
     {
         private Connection conn;
         private Callback responseCallback;
+        private bool disposed;
 
         private List<byte> buffer = new List<byte>();
         private CommunicationProtocol currentProtocol;
+
+        private void ThrowIfDisposed()
+        {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(TappyReader));
+        }
 
         public CommunicationProtocol Protocol 
         {
@@ -183,14 +190,29 @@ namespace TapTrack.Tcmp.Communication
 
 		private void DataReceivedHandler(object sender, EventArgs e)
         {
+            Connection activeConnection = conn;
+            if (activeConnection == null)
+                return;
+
             Debug.WriteLine("Data is being recieve");
-			if (!conn.IsOpen() && responseCallback != null)
-				responseCallback(null, new HardwareException("Connection to device is not open"));
+            if (!activeConnection.IsOpen())
+            {
+                responseCallback?.Invoke(null, new HardwareException("Connection to device is not open"));
+                return;
+            }
 
             Debug.WriteLine($"     Before: {BitConverter.ToString(buffer.ToArray())}");
 
-            if (conn.Read(this.buffer) == 0)
+            try
+            {
+                if (activeConnection.Read(this.buffer) == 0)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                responseCallback?.Invoke(null, ex);
                 return;
+            }
 
             Debug.WriteLine($"      After: {BitConverter.ToString(buffer.ToArray())}");
 
@@ -233,6 +255,10 @@ namespace TapTrack.Tcmp.Communication
                 {
                     responseCallback?.Invoke(null, new HardwareException("Connection to device is not open"));
                 }
+                catch (Exception exc)
+                {
+                    responseCallback?.Invoke(null, exc);
+                }
             }
         }
 
@@ -274,8 +300,9 @@ namespace TapTrack.Tcmp.Communication
         /// </summary>
         public void FlushBuffer()
         {
+            ThrowIfDisposed();
             this.buffer.Clear();
-            this.conn.Flush();
+            this.conn?.Flush();
         }
 
         /// <summary>
@@ -285,6 +312,10 @@ namespace TapTrack.Tcmp.Communication
 
         public bool ConnectByName(string tappyName)
         {
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(tappyName))
+                return false;
+
             foreach (string name in conn.GetAvailableDevices())
             {
                 if (name.ToUpper() == tappyName.ToUpper())
@@ -303,6 +334,10 @@ namespace TapTrack.Tcmp.Communication
         /// 
         public bool ConnectKioskKeyboardWedgeByName(string tappyName)
 		{
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(tappyName))
+                return false;
+
 			foreach (string name in conn.GetAvailableDevices())
 			{
 				if (name.ToUpper() == tappyName.ToUpper())
@@ -321,6 +356,7 @@ namespace TapTrack.Tcmp.Communication
 		/// <returns>True if connection to a Tappy device was successful, false otherwise</returns>
 		public bool AutoDetect()
         {
+            ThrowIfDisposed();
             foreach (string name in conn.GetAvailableDevices())
             {
                 if (Connect(name)) return true;
@@ -336,6 +372,10 @@ namespace TapTrack.Tcmp.Communication
 		///  /// <param name="timeout">Amount of time to scan for in ms</param>		
 		public string[] FindNearbyTappyBLEs(int timeout)
 		{
+            ThrowIfDisposed();
+            if (timeout < 0)
+                timeout = 0;
+
 			if (conn.getBlueGigaStatus())
 				return conn.GetAvailableDevices(timeout,false);
 			else
@@ -351,7 +391,14 @@ namespace TapTrack.Tcmp.Communication
 		/// <param name="protocol"></param>
 		public void SwitchProtocol(CommunicationProtocol protocol)
         {
-            conn?.Disconnect();
+            ThrowIfDisposed();
+
+            if (conn != null)
+            {
+                conn.DataReceived -= new EventHandler(DataReceivedHandler);
+                conn.Disconnect();
+            }
+
             currentProtocol = protocol;
             InitializeConnection();
             FlushBuffer();
@@ -366,6 +413,7 @@ namespace TapTrack.Tcmp.Communication
         /// <returns></returns>
         public bool Connect(string deviceName)
         {
+            ThrowIfDisposed();
 			return ConnectWithTimeout(deviceName, 1000);
         }
 
@@ -376,6 +424,7 @@ namespace TapTrack.Tcmp.Communication
 		/// <returns></returns>
 		public bool ConnectKioskKeyboardWedge(string deviceName)
 		{
+            ThrowIfDisposed();
 			return ConnectWithTimeout(deviceName,12000);
 		}
 		/// <summary>
@@ -386,37 +435,48 @@ namespace TapTrack.Tcmp.Communication
 		/// <returns></returns>
 		public bool ConnectWithTimeout(string deviceName,int timeout)
 		{
+            ThrowIfDisposed();
+            if (string.IsNullOrWhiteSpace(deviceName) || timeout <= 0)
+                return false;
+
 			Command cmd = new Ping();
-			AutoResetEvent receivedResp = new AutoResetEvent(false);
+            AutoResetEvent receivedResp = new AutoResetEvent(false);
 			bool success = false;
 			bool exceptionOccurred = false;
 
 			if (!conn.Connect(deviceName))
 				return false;
 
-			Callback resp = (ResponseFrame frame, Exception e) =>
-			{
-				if (e != null)
-					exceptionOccurred = true;
-				else if (TcmpFrame.IsValidFrame(frame))
-					success = true;
-				receivedResp.Set();
-			};
+            try
+            {
+                Callback resp = (ResponseFrame frame, Exception e) =>
+                {
+                    if (e != null)
+                        exceptionOccurred = true;
+                    else if (TcmpFrame.IsValidFrame(frame))
+                        success = true;
+                    receivedResp.Set();
+                };
 
-			SendCommand(cmd, resp);
-			receivedResp.WaitOne(timeout);
+                SendCommand(cmd, resp);
+                receivedResp.WaitOne(timeout);
 
-			// Only retry on a genuine timeout (no exception, no response).
-			// On first TrueUSB use the WinUSB driver initialises slowly and the
-			// device may discard its Ping response before the read thread is ready;
-			// retrying while the connection is already warm succeeds.
-			// Do NOT retry if Send itself threw – the port is not a Tappy.
-			if (!success && !exceptionOccurred)
-			{
-				receivedResp.Reset();
-				SendCommand(cmd, resp);
-				receivedResp.WaitOne(timeout);
-			}
+                // Only retry on a genuine timeout (no exception, no response).
+                // On first TrueUSB use the WinUSB driver initialises slowly and the
+                // device may discard its Ping response before the read thread is ready;
+                // retrying while the connection is already warm succeeds.
+                // Do NOT retry if Send itself threw – the port is not a Tappy.
+                if (!success && !exceptionOccurred)
+                {
+                    receivedResp.Reset();
+                    SendCommand(cmd, resp);
+                    receivedResp.WaitOne(timeout);
+                }
+            }
+            finally
+            {
+                receivedResp.Dispose();
+            }
 
 			if (success)
 				DeviceName = deviceName;
@@ -431,6 +491,7 @@ namespace TapTrack.Tcmp.Communication
 		/// </summary>
 		public void Disconnect()
         {
+            ThrowIfDisposed();
             conn.Disconnect();
             DeviceName = null;
         }
@@ -441,6 +502,7 @@ namespace TapTrack.Tcmp.Communication
         /// <returns>Array of device/port names</returns>
         public string[] GetAvailableDevices()
         {
+            ThrowIfDisposed();
             return conn.GetAvailableDevices();
         }
 
@@ -451,6 +513,10 @@ namespace TapTrack.Tcmp.Communication
         /// <param name="responseCallback">Method to be called when a data is receieved or a error has occurred</param>
         public void SendCommand(Command command, Callback responseCallback = null)
         {
+            ThrowIfDisposed();
+            if (command == null)
+                throw new ArgumentNullException(nameof(command));
+
             CommandFrame frame = new CommandFrame(command);
             _Send(frame, responseCallback);
         }
@@ -463,6 +529,7 @@ namespace TapTrack.Tcmp.Communication
         /// <param name="parameters">Parameters of the command</param>
         public void SendCommand<T>(Callback responseCallback, params object[] parameters) where T : Command
         {
+            ThrowIfDisposed();
             CommandFrame frame = new CommandFrame((Command)Activator.CreateInstance(typeof(T), parameters));
             _Send(frame, responseCallback);
         }
@@ -474,12 +541,16 @@ namespace TapTrack.Tcmp.Communication
         /// <param name="parameters">Parameters of the command</param>
         public void SendCommand<T>(params object[] parameters) where T : Command
         {
+            ThrowIfDisposed();
             CommandFrame frame = new CommandFrame((Command)Activator.CreateInstance(typeof(T), parameters));
             _Send(frame);
         }
 
         private void _Send(CommandFrame frame, Callback responseCallback = null)
         {
+            if (frame == null)
+                throw new ArgumentNullException(nameof(frame));
+
             this.responseCallback = responseCallback;
 
             try
@@ -497,6 +568,7 @@ namespace TapTrack.Tcmp.Communication
 		/// </summary>
 		public bool isConnected()
 		{
+            ThrowIfDisposed();
 			return conn.getConnectionStatus();
 		}
 		/// <summary>
@@ -505,6 +577,7 @@ namespace TapTrack.Tcmp.Communication
 
 		public bool isBlueGigaConnected()
 		{
+            ThrowIfDisposed();
 			return conn.getBlueGigaStatus();
 		}
 
@@ -513,6 +586,10 @@ namespace TapTrack.Tcmp.Communication
 		/// </summary>
 		public void setDisconnectCallback(DisconnectedEventHandler disconnectCallback)
 		{
+            ThrowIfDisposed();
+            if (disconnectCallback == null)
+                return;
+
 			conn.setDisconnectCallback(disconnectCallback);
 		}
 
@@ -521,12 +598,27 @@ namespace TapTrack.Tcmp.Communication
 		/// </summary>
 		public void DisconnectBlueGiga()
 		{
+            ThrowIfDisposed();
 			conn.DisconnectBlueGiga();
 		}
 
 		public void Dispose()
         {
-            conn.Dispose();
+            if (disposed)
+                return;
+
+            disposed = true;
+
+            if (conn != null)
+            {
+                conn.DataReceived -= new EventHandler(DataReceivedHandler);
+                conn.Dispose();
+                conn = null;
+            }
+
+            responseCallback = null;
+            buffer.Clear();
+            DeviceName = null;
         }
     }
 }
